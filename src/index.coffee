@@ -1,62 +1,45 @@
 sysPath = require 'path'
-_ = require 'underscore'
-Q = require 'q'
+mkdirp = require 'mkdirp'
+_ = require 'lodash'
+file = require 'file'
 fs = require 'fs'
-bowerList = require 'bower/lib/commands/list'
 
 helper =
-  monkeyPatchPaths: (bowerListResult) ->
-    fixPath = (path) -> 
-      path.split('/').join sysPath.sep
+  test: (file) ->
+    pathRuleTester = (rule, path) ->
+      if rule.test(file) is true
+        return {
+          path: path
+          file: file
+        }
+      else return null
 
-    result = {}
+    _(this)
+      .map(pathRuleTester)
+      .reject((x) -> x is null)
+      .first()
+  
+  copy: (assert) ->
+    path = sysPath.join this.public, assert.path, sysPath.basename assert.file
+    mkdirp sysPath.dirname(path), (err) ->
+      console.log err if err
+      writeStream = fs.createWriteStream path
+      readStream = fs.createReadStream assert.file
+      readStream.pipe writeStream
 
-    _.each bowerListResult, (v, k) ->
-      if _.isArray v
-        resultv = []
-        _.each v, (vv, i) ->
-          resultv[i] = fixPath vv
-        result[k] = resultv
-      else result[k] = fixPath v
-    return result
-
-module.exports = class BowerJSIncluder
+module.exports = class BowerAssertsCopier
   brunchPlugin: yes
-  type: 'javascript'
-  extension: 'js'
 
   constructor: (config) ->
-    pathsDefered = Q.defer()
-    mergedPathDefered = Q.defer()
     @public = config.paths?.public
-    include = config.plugins?.bower?.extend
-
-    pathsDefered.promise.then (paths) ->
-      include = helper.monkeyPatchPaths include
-      merged = _.extend {}, paths, include
-      resolveResult = []
-
-      _.each merged, (v, k) ->
-        if _.isArray v
-          _.each v, (vv, i) ->
-            resolveResult.push vv
-        else resolveResult.push v
-
-      mergedPathDefered.resolve resolveResult
-
-    @pathsPromise = mergedPathDefered.promise
-    bowerList({paths: true}).on 'data', (paths) ->
-      pathsDefered.resolve paths
-
-  compile: (data, path, callback) ->
-    @pathsPromise.then (paths) ->
-      if path.indexOf('app') is 0
-        callback null, data      
-
-      # скобки нужны
-      if paths.indexOf(path) >= 0
-        callback null, data
-      else callback null, ""
+    @asserts = config?.plugins?.bower?.asserts
 
   onCompile: (compiled) ->
-    #console.log compiled
+    tester = _.bind helper.test, @asserts
+    copier = _.bind helper.copy, public: @public
+
+    file.walk "vendor", (nil, dirPath, dirs, files) ->
+      _(files)
+        .map((x) -> tester x)
+        .compact()
+        .each copier
