@@ -18,7 +18,7 @@ helper =
       .map(pathRuleTester)
       .reject((x) -> x is null)
       .first()
-  
+
   copy: (assert) ->
     path = sysPath.join this.public, assert.path, sysPath.basename assert.file
     mkdirp sysPath.dirname(path), (err) ->
@@ -33,12 +33,13 @@ module.exports = class BowerAssertsCopier
   constructor: (config) ->
     @public = config.paths?.public
     @asserts = config?.plugins?.bower?.asserts
+    @vendorPath = config.paths?.vendor ? 'vendor'
 
   onCompile: (compiled) ->
     tester = _.bind helper.test, @asserts
     copier = _.bind helper.copy, public: @public
 
-    file.walk "vendor", (nil, dirPath, dirs, files) ->
+    file.walk @vendorPath, (nil, dirPath, dirs, files) ->
       _(files)
         .map((x) -> tester x)
         .compact()
